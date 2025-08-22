@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Group Video Call</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="https://unpkg.com/peerjs@1.4.7/dist/peerjs.min.js"></script>
+</head>
+<body class="bg-gray-900 text-white flex flex-col items-center p-4 min-h-screen">
+
+<h1 class="text-3xl font-bold mb-4">Group Video Call</h1>
+
+<div class="flex flex-col md:flex-row gap-2 mb-4">
+  <input id="roomInput" placeholder="Enter Room Code" class="p-2 rounded text-black flex-1" />
+  <button id="joinBtn" class="bg-green-500 px-6 py-2 rounded-lg hover:bg-green-600 transition">Join Room</button>
+</div>
+
+<div id="videos" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 w-full max-w-5xl"></div>
+
+<script>
+
+    const joinBtn = document.getElementById('joinBtn');
+const roomInput = document.getElementById('roomInput');
+const videosContainer = document.getElementById('videos');
+
+let localStream;
+const peers = {}; // { peerId: call }
+let peer;
+let roomCode;
+
+async function joinRoom() {
+  roomCode = roomInput.value.trim();
+  if (!roomCode) return alert('Enter a room code');
+
+  // 1. Get local camera/mic
+  localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+  addVideo('local', localStream, true);
+
+  // 2. Create PeerJS peer
+  peer = new Peer(undefined, { host: 'peerjs.com', port: 443, secure: true });
+
+  peer.on('open', id => {
+    console.log('My Peer ID:', id);
+    // Store in localStorage so others can find
+    if (!localStorage.rooms) localStorage.rooms = '{}';
+    const rooms = JSON.parse(localStorage.rooms);
+    if (!rooms[roomCode]) rooms[roomCode] = [];
+    rooms[roomCode].push(id);
+    localStorage.rooms = JSON.stringify(rooms);
+
+    // Call existing peers in room
+    rooms[roomCode].forEach(peerId => {
+      if (peerId === id) return;
+      const call = peer.call(peerId, localStream);
+      call.on('stream', remoteStream => addVideo(peerId, remoteStream));
+      peers[peerId] = call;
+    });
+  });
+
+  // Handle incoming calls
+  peer.on('call', call => {
+    call.answer(localStream);
+    call.on('stream', remoteStream => addVideo(call.peer, remoteStream));
+    peers[call.peer] = call;
+  });
+
+  // Cleanup peers on unload
+  window.addEventListener('beforeunload', () => {
+    for (let p in peers) peers[p].close();
+    peer.destroy();
+  });
+}
+
+// Add video element
+function addVideo(id, stream, muted = false) {
+  if (document.getElementById(id)) return;
+  const video = document.createElement('video');
+  video.id = id;
+  video.srcObject = stream;
+  video.autoplay = true;
+  video.muted = muted;
+  video.className = 'w-full rounded-lg';
+  videosContainer.appendChild(video);
+}
+
+joinBtn.addEventListener('click', joinRoom);
+
+</script>
+</body>
+</html>
